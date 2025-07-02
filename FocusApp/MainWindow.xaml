@@ -1,0 +1,44 @@
+﻿<Window x:Class="FocusApp.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:FocusApp"
+        mc:Ignorable="d"
+        Title="Focus Timer" Height="450" Width="800">
+    <Grid Margin="20">
+        <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center" Width="350">
+            <TextBlock Text="Select Timer Mode:" FontWeight="Bold" Margin="0,0,0,5"/>
+            <ComboBox x:Name="TimerModeComboBox" SelectedIndex="0" Margin="0,0,0,10">
+                <ComboBoxItem>Pomodoro</ComboBoxItem>
+                <ComboBoxItem>Time Free Focus</ComboBoxItem>
+            </ComboBox>
+
+            <!-- Pomodoro Settings -->
+            <StackPanel x:Name="PomodoroPanel" Orientation="Vertical">
+                <TextBlock Text="Work Time (minutes):" Margin="0,0,0,2"/>
+                <TextBox x:Name="PomodoroWorkTimeTextBox" Text="25" Margin="0,0,0,5"/>
+                <TextBlock Text="Rest Time (minutes):" Margin="0,0,0,2"/>
+                <TextBox x:Name="PomodoroRestTimeTextBox" Text="5"/>
+            </StackPanel>
+
+            <!-- Time Free Focus Settings -->
+            <StackPanel x:Name="TimeFreeFocusPanel" Orientation="Vertical" Visibility="Collapsed">
+                <TextBlock Text="Work Time Range (minutes):" Margin="0,10,0,2"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBox x:Name="TFFWorkMinTextBox" Text="20" Width="50" Margin="0,0,5,0"/>
+                    <TextBlock Text="-" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TFFWorkMaxTextBox" Text="45" Width="50" Margin="5,0,0,0"/>
+                </StackPanel>
+                <TextBlock Text="Rest Time (% of work, 5-20%):" Margin="0,10,0,2"/>
+                <TextBox x:Name="TFFRestPercentTextBox" Text="10"/>
+            </StackPanel>
+
+            <Button x:Name="StartButton" Content="Start Timer" Height="40" Margin="0,10,0,0"/>
+            <Button x:Name="StopButton" Content="Stop Timer" Height="30" Visibility="Collapsed"/>
+
+            <TextBlock x:Name="PeriodLabel" Text="" FontSize="18" FontWeight="SemiBold" TextAlignment="Center" Margin="0,10,0,0"/>
+            <TextBlock x:Name="TimerDisplay" Text="00:00" FontSize="36" FontWeight="Bold" TextAlignment="Center" Margin="0,20,0,0"/>
+        </StackPanel>
+    </Grid>
+</Window>
