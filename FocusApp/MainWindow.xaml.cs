@@ -6,50 +6,51 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using System.Media;
 using System.Windows.Media;
+using System.Collections.ObjectModel;
+using FocusApp;
 
 namespace FocusApp
 {
+    public class UserSettings
+    {
+        public int LastTimerMode { get; set; } = 0;
+    }
+
     public partial class MainWindow : Window
     {
-        private DispatcherTimer _timer;
-        private TimeSpan _timeLeft;
-        private bool _isWorkPeriod;
+        private FocusSessionManager _sessionManager = new();
         private string _settingsPath = "tff_settings.json";
-
-        // Settings for Time Free Focus
-        private int _tffWorkMin = 20;
-        private int _tffWorkMax = 45;
-        private int _tffRestPercent = 10;
-
-        // Session tracking
-        private DateTime _sessionStart;
-        private TimeSpan _workDuration;
-        private TimeSpan _restDuration;
-        private bool _manualStop;
-        private string _sessionLogPath = "sessions.json";
+        private string _userSettingsPath = "user_settings.json";
+        private UserSettings _userSettings = new();
+        private TimerStatus _lastStatus = TimerStatus.None;
 
         public MainWindow()
         {
             InitializeComponent();
+            LoadUserSettings();
+            TimerModeComboBox.SelectedIndex = _userSettings.LastTimerMode;
+            _sessionManager.SetDispatcher(Dispatcher.CurrentDispatcher);
             TimerModeComboBox.SelectionChanged += TimerModeComboBox_SelectionChanged;
             StartButton.Click += StartButton_Click;
             StopButton.Click += StopButton_Click;
+            AddDistractionButton.Click += AddDistractionButton_Click;
+            _sessionManager.StatusChanged += OnStatusChanged;
+            _sessionManager.SessionCompleted += OnSessionCompleted;
+            _sessionManager.TimerTick += OnTimerTick;
+            DistractionsListBox.ItemsSource = _sessionManager.Distractions;
             LoadTFFSettings();
             UpdateTFFUI();
+            SetPeriodLabel(_sessionManager.Status);
+            TimerDisplay.Text = "00:00";
         }
 
         private void TimerModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (TimerModeComboBox.SelectedIndex == 0) // Pomodoro
-            {
-                PomodoroPanel.Visibility = Visibility.Visible;
-                TimeFreeFocusPanel.Visibility = Visibility.Collapsed;
-            }
-            else // Time Free Focus
-            {
-                PomodoroPanel.Visibility = Visibility.Collapsed;
-                TimeFreeFocusPanel.Visibility = Visibility.Visible;
-            }
+            PomodoroPanel.Visibility = TimerModeComboBox.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+            TimeFreeFocusPanel.Visibility =
+                TimerModeComboBox.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+            _userSettings.LastTimerMode = TimerModeComboBox.SelectedIndex;
+            SaveUserSettings();
         }
 
         private void StartButton_Click(object sender, RoutedEventArgs e)
@@ -64,31 +65,23 @@ namespace FocusApp
                     return;
                 }
 
-                _isWorkPeriod = true;
-                _timeLeft = TimeSpan.FromMinutes(workMin);
-                StartTimer();
+                _sessionManager.StartWork(workMin);
             }
             else
             {
                 // Time Free Focus
                 if (!int.TryParse(TFFWorkMinTextBox.Text, out var minWork) || minWork < 1 ||
                     !int.TryParse(TFFWorkMaxTextBox.Text, out var maxWork) || maxWork < minWork ||
-                    !int.TryParse(TFFRestPercentTextBox.Text, out var restPercent) || restPercent < 5 ||
-                    restPercent > 20)
+                    !int.TryParse(TFFRestMinTextBox.Text, out var minRest) || minRest < 8 ||
+                    !int.TryParse(TFFRestMaxTextBox.Text, out var maxRest) || maxRest < minRest)
                 {
                     MessageBox.Show(
-                        "Please enter valid values for Time Free Focus. Rest percent must be 5-20% and work min/max must be valid.");
+                        "Please enter valid values for Time Free Focus. Work min/max must be valid and rest min must be at least 8.");
                     return;
                 }
 
-                _tffWorkMin = minWork;
-                _tffWorkMax = maxWork;
-                _tffRestPercent = restPercent;
-                SaveTFFSettings();
-                var workDuration = new Random().Next(_tffWorkMin, _tffWorkMax + 1);
-                _isWorkPeriod = true;
-                _timeLeft = TimeSpan.FromMinutes(workDuration);
-                StartTimer();
+                _sessionManager.ConfigureTFF(minWork, maxWork, minRest, maxRest);
+                _sessionManager.StartRandomTFFWork();
             }
 
             StartButton.Visibility = Visibility.Collapsed;
@@ -97,109 +90,100 @@ namespace FocusApp
 
         private void StopButton_Click(object sender, RoutedEventArgs e)
         {
-            StopTimer();
+            _sessionManager.Stop();
             TimerDisplay.Text = "00:00";
             StartButton.Visibility = Visibility.Visible;
             StopButton.Visibility = Visibility.Collapsed;
         }
 
-        private void SetPeriodLabel()
+        private void AddDistractionButton_Click(object sender, RoutedEventArgs e)
         {
-            PeriodLabel.Text = _isWorkPeriod ? "Work" : "Rest";
-        }
-
-        private void StartTimer()
-        {
-            if (_timer == null)
+            if (!string.IsNullOrWhiteSpace(DoingTextBox.Text) ||
+                !string.IsNullOrWhiteSpace(DistractedTextBox.Text) ||
+                !string.IsNullOrWhiteSpace(FeltTextBox.Text) ||
+                !string.IsNullOrWhiteSpace(DifferentlyTextBox.Text))
             {
-                _timer = new DispatcherTimer();
-                _timer.Interval = TimeSpan.FromSeconds(1);
-                _timer.Tick += Timer_Tick;
-            }
-            if (_isWorkPeriod)
-            {
-                _sessionStart = DateTime.Now;
-                _workDuration = _timeLeft;
-                _restDuration = TimeSpan.Zero;
-                _manualStop = false;
-            }
-            SetPeriodLabel();
-            _timer.Start();
-            UpdateTimerDisplay();
-        }
-
-        private void StopTimer()
-        {
-            if (_timer != null)
-            {
-                _timer.Stop();
-            }
-            if (_isWorkPeriod || _restDuration > TimeSpan.Zero)
-            {
-                _manualStop = true;
-                SaveSessionLog();
+                _sessionManager.AddDistraction(new Distraction
+                {
+                    WhatIDid = DoingTextBox.Text,
+                    WhatDistractedMe = DistractedTextBox.Text,
+                    HowIFelt = FeltTextBox.Text,
+                    WhatCouldIDoDifferently = DifferentlyTextBox.Text
+                });
+                DoingTextBox.Text = "";
+                DistractedTextBox.Text = "";
+                FeltTextBox.Text = "";
+                DifferentlyTextBox.Text = "";
             }
         }
 
-        private void Timer_Tick(object sender, EventArgs e)
+        private void OnStatusChanged(TimerStatus status, TimeSpan timeLeft)
         {
-            _timeLeft = _timeLeft.Add(TimeSpan.FromSeconds(-1));
-            UpdateTimerDisplay();
-            if (_timeLeft.TotalSeconds <= 0)
+            // Play sound and bring window to front when transitioning from Work to Rest or from Work/Rest to None
+            if ((_lastStatus == TimerStatus.Work && status == TimerStatus.Rest) ||
+                ((_lastStatus == TimerStatus.Work || _lastStatus == TimerStatus.Rest) && status == TimerStatus.None))
             {
-                _timer.Stop();
                 PlayFinishSound();
                 BringWindowToFront();
-                if (TimerModeComboBox.SelectedIndex == 0)
-                {
-                    // Pomodoro: switch between work/rest
-                    if (_isWorkPeriod)
-                    {
-                        if (int.TryParse(PomodoroRestTimeTextBox.Text, out var restMin))
-                        {
-                            _isWorkPeriod = false;
-                            _restDuration = TimeSpan.FromMinutes(restMin);
-                            _timeLeft = _restDuration;
-                            SetPeriodLabel();
-                            _timer.Start();
-                        }
-                    }
-                    else
-                    {
-                        SaveSessionLog();
-                        MessageBox.Show("Pomodoro session complete!");
-                        StartButton.Visibility = Visibility.Visible;
-                        StopButton.Visibility = Visibility.Collapsed;
-                    }
-                }
-                else
-                {
-                    // Time Free Focus: switch between work/rest
-                    if (_isWorkPeriod)
-                    {
-                        var restDuration = (int)Math.Round(_workDuration.TotalMinutes * _tffRestPercent / 100.0);
-                        restDuration = Math.Max(1, restDuration);
-                        _isWorkPeriod = false;
-                        _restDuration = TimeSpan.FromMinutes(restDuration);
-                        _timeLeft = _restDuration;
-                        SetPeriodLabel();
-                        _timer.Start();
-                    }
-                    else
-                    {
-                        SaveSessionLog();
-                        MessageBox.Show("Focus session complete!");
-                        StartButton.Visibility = Visibility.Visible;
-                        StopButton.Visibility = Visibility.Collapsed;
-                    }
-                }
             }
+            _lastStatus = status;
+            SetPeriodLabel(status);
+            TimerDisplay.Text = timeLeft.ToString(@"mm\:ss");
         }
 
-        private void UpdateTimerDisplay()
+        private void BringWindowToFront()
         {
-            TimerDisplay.Text = _timeLeft.ToString(@"mm\:ss");
-            SetPeriodLabel();
+            Topmost = true;
+            Activate();
+            var resetTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            resetTimer.Tick += (s, e) =>
+            {
+                Topmost = false;
+                resetTimer.Stop();
+            };
+            resetTimer.Start();
+        }
+
+        private void OnSessionCompleted()
+        {
+            MessageBox.Show(TimerModeComboBox.SelectedIndex == 0
+                ? "Pomodoro session complete!"
+                : "Focus session complete!");
+            StartButton.Visibility = Visibility.Visible;
+            StopButton.Visibility = Visibility.Collapsed;
+        }
+
+        private void OnTimerTick()
+        {
+            TimerDisplay.Text = _sessionManager.TimeLeft.ToString(@"mm\:ss");
+        }
+
+        private void SetPeriodLabel(TimerStatus status)
+        {
+            // Hide timer in TFF work period
+            if (TimerModeComboBox.SelectedIndex == 1 && status == TimerStatus.Work)
+            {
+                TimerDisplay.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                TimerDisplay.Visibility = Visibility.Visible;
+            }
+            switch (status)
+            {
+                case TimerStatus.Work:
+                    PeriodLabel.Text = "Work";
+                    DistractionNotesPanel.Visibility = Visibility.Visible;
+                    break;
+                case TimerStatus.Rest:
+                    PeriodLabel.Text = "Rest";
+                    DistractionNotesPanel.Visibility = Visibility.Collapsed;
+                    break;
+                default:
+                    PeriodLabel.Text = "None";
+                    DistractionNotesPanel.Visibility = Visibility.Collapsed;
+                    break;
+            }
         }
 
         private void PlayFinishSound()
@@ -235,25 +219,6 @@ namespace FocusApp
             }
         }
 
-        private void BringWindowToFront()
-        {
-            Topmost = true;
-            Activate();
-            var resetTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-            resetTimer.Tick += (s, e) =>
-            {
-                Topmost = false;
-                resetTimer.Stop();
-            };
-            resetTimer.Start();
-        }
-
-        private void SaveTFFSettings()
-        {
-            var settings = new { WorkMin = _tffWorkMin, WorkMax = _tffWorkMax, RestPercent = _tffRestPercent };
-            File.WriteAllText(_settingsPath, JsonSerializer.Serialize(settings));
-        }
-
         private void LoadTFFSettings()
         {
             if (File.Exists(_settingsPath))
@@ -264,9 +229,9 @@ namespace FocusApp
                     var settings = JsonSerializer.Deserialize<TFFSettings>(json);
                     if (settings != null)
                     {
-                        _tffWorkMin = settings.WorkMin;
-                        _tffWorkMax = settings.WorkMax;
-                        _tffRestPercent = settings.RestPercent;
+                        TFFWorkMinTextBox.Text = settings.WorkMin.ToString();
+                        TFFWorkMaxTextBox.Text = settings.WorkMax.ToString();
+                        // Optionally set TFFRestMinTextBox and TFFRestMaxTextBox if you want to persist them
                     }
                 }
                 catch
@@ -277,53 +242,31 @@ namespace FocusApp
 
         private void UpdateTFFUI()
         {
-            TFFWorkMinTextBox.Text = _tffWorkMin.ToString();
-            TFFWorkMaxTextBox.Text = _tffWorkMax.ToString();
-            TFFRestPercentTextBox.Text = _tffRestPercent.ToString();
+            // Optionally update UI fields if needed
         }
 
-        private void SaveSessionLog()
+        private void LoadUserSettings()
         {
-            var session = new SessionLog
+            if (File.Exists(_userSettingsPath))
             {
-                StartTime = _sessionStart,
-                EndTime = DateTime.Now,
-                WorkDuration = _workDuration,
-                RestDuration = _restDuration,
-                StoppedManually = _manualStop,
-                Mode = TimerModeComboBox.SelectedIndex == 0 ? "Pomodoro" : "Time Free Focus"
-            };
+                try
+                {
+                    var json = File.ReadAllText(_userSettingsPath);
+                    var settings = JsonSerializer.Deserialize<UserSettings>(json);
+                    if (settings != null)
+                        _userSettings = settings;
+                }
+                catch { }
+            }
+        }
+
+        private void SaveUserSettings()
+        {
             try
             {
-                var list = new System.Collections.Generic.List<SessionLog>();
-                if (File.Exists(_sessionLogPath))
-                {
-                    var json = File.ReadAllText(_sessionLogPath);
-                    var existing = JsonSerializer.Deserialize<System.Collections.Generic.List<SessionLog>>(json);
-                    if (existing != null)
-                        list = existing;
-                }
-                list.Add(session);
-                File.WriteAllText(_sessionLogPath, JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = true }));
+                File.WriteAllText(_userSettingsPath, JsonSerializer.Serialize(_userSettings));
             }
             catch { }
-        }
-
-        private class TFFSettings
-        {
-            public int WorkMin { get; set; }
-            public int WorkMax { get; set; }
-            public int RestPercent { get; set; }
-        }
-
-        private class SessionLog
-        {
-            public DateTime StartTime { get; set; }
-            public DateTime EndTime { get; set; }
-            public TimeSpan WorkDuration { get; set; }
-            public TimeSpan RestDuration { get; set; }
-            public bool StoppedManually { get; set; }
-            public string Mode { get; set; }
         }
     }
 }

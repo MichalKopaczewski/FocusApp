@@ -5,9 +5,20 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:FocusApp"
         mc:Ignorable="d"
-        Title="Focus Timer" Height="450" Width="800">
+        Title="Focus Timer" Height="600" Width="900">
     <Grid Margin="20">
-        <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center" Width="350">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="180"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="2*"/>
+            <ColumnDefinition Width="3*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Timer and Controls (Left) -->
+        <StackPanel Grid.Row="0" Grid.Column="0" Grid.RowSpan="2" Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center" Width="320">
             <TextBlock Text="Select Timer Mode:" FontWeight="Bold" Margin="0,0,0,5"/>
             <ComboBox x:Name="TimerModeComboBox" SelectedIndex="0" Margin="0,0,0,10">
                 <ComboBoxItem>Pomodoro</ComboBoxItem>
@@ -30,8 +41,12 @@
                     <TextBlock Text="-" VerticalAlignment="Center"/>
                     <TextBox x:Name="TFFWorkMaxTextBox" Text="45" Width="50" Margin="5,0,0,0"/>
                 </StackPanel>
-                <TextBlock Text="Rest Time (% of work, 5-20%):" Margin="0,10,0,2"/>
-                <TextBox x:Name="TFFRestPercentTextBox" Text="10"/>
+                <TextBlock Text="Rest Time Range (minutes):" Margin="0,10,0,2"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBox x:Name="TFFRestMinTextBox" Text="8" Width="50" Margin="0,0,5,0"/>
+                    <TextBlock Text="-" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TFFRestMaxTextBox" Text="10" Width="50" Margin="5,0,0,0"/>
+                </StackPanel>
             </StackPanel>
 
             <Button x:Name="StartButton" Content="Start Timer" Height="40" Margin="0,10,0,0"/>
@@ -39,6 +54,36 @@
 
             <TextBlock x:Name="PeriodLabel" Text="" FontSize="18" FontWeight="SemiBold" TextAlignment="Center" Margin="0,10,0,0"/>
             <TextBlock x:Name="TimerDisplay" Text="00:00" FontSize="36" FontWeight="Bold" TextAlignment="Center" Margin="0,20,0,0"/>
+        </StackPanel>
+
+        <!-- Distraction Notes Panel (Right) -->
+        <StackPanel x:Name="DistractionNotesPanel" Grid.Row="0" Grid.Column="1" Grid.RowSpan="2" Orientation="Vertical" Margin="30,0,0,0" Visibility="Collapsed" Width="350">
+            <TextBlock Text="What I was doing?"/>
+            <TextBox x:Name="DoingTextBox" AcceptsReturn="True" Height="50" TextWrapping="Wrap"/>
+            <TextBlock Text="What distracted me?" Margin="0,10,0,0"/>
+            <TextBox x:Name="DistractedTextBox" AcceptsReturn="True" Height="50" TextWrapping="Wrap"/>
+            <TextBlock Text="How I felt during distraction?" Margin="0,10,0,0"/>
+            <TextBox x:Name="FeltTextBox" AcceptsReturn="True" Height="50" TextWrapping="Wrap"/>
+            <TextBlock Text="What could I do differently?" Margin="0,10,0,0"/>
+            <TextBox x:Name="DifferentlyTextBox" AcceptsReturn="True" Height="50" TextWrapping="Wrap"/>
+            <Button x:Name="AddDistractionButton" Content="Add Distraction" Margin="0,10,0,0" Height="30"/>
+        </StackPanel>
+
+        <!-- Distractions List (Bottom, spanning both columns) -->
+        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Vertical" Margin="0,20,0,0">
+            <TextBlock Text="Distractions this session:" Margin="0,0,0,5" FontWeight="Bold"/>
+            <ListBox x:Name="DistractionsListBox" Height="140">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,0,0,10">
+                            <TextBlock Text="What I was doing: " FontWeight="Bold"/><TextBlock Text="{Binding WhatIDid}" TextWrapping="Wrap"/>
+                            <TextBlock Text="What distracted me: " FontWeight="Bold"/><TextBlock Text="{Binding WhatDistractedMe}" TextWrapping="Wrap"/>
+                            <TextBlock Text="How I felt: " FontWeight="Bold"/><TextBlock Text="{Binding HowIFelt}" TextWrapping="Wrap"/>
+                            <TextBlock Text="What could I do differently: " FontWeight="Bold"/><TextBlock Text="{Binding WhatCouldIDoDifferently}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </StackPanel>
     </Grid>
 </Window>
